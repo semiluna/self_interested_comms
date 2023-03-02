@@ -6,6 +6,7 @@ from enum import Enum
 
 import gymnasium as gym
 from gymnasium import spaces
+from gymnasium.utils import seeding
 
 DEFAULT_OPTIONS = {
     'world_shape': [24, 24],
@@ -15,7 +16,7 @@ DEFAULT_OPTIONS = {
     'max_episode_len': -1,
     "min_coverable_area_fraction": 0.6,
     "map_mode": "random",
-    "n_agents": [5],
+    "n_agents": 4,
     "disabled_teams_step": [False],
     "disabled_teams_comms": [False],
     'communication_range': 8.0,
@@ -24,7 +25,7 @@ DEFAULT_OPTIONS = {
     'reward_type': 'semi_cooperative',
     #"operation_mode": 'all', # greedy_only, coop_only, don't default for now
     'episode_termination': 'early',
-    'agent_observability_radius': None,
+    'agent_observability_radius': 3,
 }
 
 class Dir(Enum):
@@ -45,16 +46,16 @@ class WorldMap():
         self.min_coverable_area_fraction = min_coverable_area_fraction
         self.reset(random_state)
 
-    def reset(self, random_state, mode="random"):
-        self.coverage = np.zeros(self.shape, dtype=np.int)
+    def reset(self, random_state, mode="random", seed=None, options=None):
+        self.coverage = np.zeros(self.shape, dtype=np.int8)
         if mode == "random":
             if self.min_coverable_area_fraction == 1.0:
                 self.map = np.zeros(self.shape, dtype=np.uint8)
             else:
                 self.map = np.ones(self.shape, dtype=np.uint8)
-                p = np.array([random_state.randint(0, self.shape[c]) for c in [Y, X]])
+                p = np.array([random_state.integers(0, self.shape[c]) for c in [Y, X]])
                 while self.get_coverable_area_faction() < self.min_coverable_area_fraction:
-                    d_p = np.array([[0, 1], [0, -1], [-1, 0], [1, 0]][random_state.randint(0, 4)])
+                    d_p = np.array([[0, 1], [0, -1], [-1, 0], [1, 0]][random_state.integers(0, 4)])
                     p_new = np.clip(p + d_p, [0,0], np.array(self.shape)-1)
                     self.map[min(p[Y],p_new[Y]):max(p[Y],p_new[Y])+1, min(p[X],p_new[X]):max(p[X],p_new[X])+1] = 0
                     p = p_new
@@ -84,11 +85,12 @@ class Action(Enum):
     MOVE_DOWN   = 4
 
 class Robot():
-    def __init__(self, index, random_state, world, observability_radius):
+    def __init__(self, index, random_state, world, observability_radius, no_new_coverage_limit):
         self.index = index
         self.world = world
         self.radius = observability_radius
         self.pose = np.array([-1, -1])
+        self.termination_no_new_coverage = no_new_coverage_limit
         self.reset(random_state)
     
     def reset(self, random_state, pose_mean=np.array([0, 0]), pose_var=1):
@@ -100,11 +102,11 @@ class Robot():
         current_pose_var = pose_var
         self.pose = random_pos(current_pose_var)
         self.prev_pose = self.pose.copy()
-        while self.world.map.map[self.pose[Y], self.pose[X]] == 1 or (self.world.is_occupied(self.pose, self) and self.one_agent_per_cell):
+        while self.world.map.map[self.pose[Y], self.pose[X]] == 1:
             self.pose = random_pos(current_pose_var)
             current_pose_var += 0.1
 
-        self.coverage = np.zeros(self.world.map.shape, dtype=np.bool)
+        self.coverage = np.zeros(self.world.map.shape, dtype=bool)
         self.state = None
         self.no_new_coverage_steps = 0
         self.reward = 0
@@ -149,14 +151,18 @@ class Robot():
         
         # Get neighbours within field-of-vision
         local_robots = np.zeros(self.world.map.shape, dtype=np.uint8)
-        for agent in self.world.agents.values():
+        for agent in self.world.agents:
             if agent is not self and np.sum((agent.pose - self.pose)**2) < self.radius**2:
                 local_robots[agent.pose[ROW], agent.pose[COL]] = 2
         local_robots[self.pose[ROW], self.pose[COL]] = 1
         local_robots = self.local_frame(local_robots, fill=0)
         
         self.state = np.stack([local_world, local_coverage, local_robots], axis=-1).astype(np.uint8)
-    
+        done = self.no_new_coverage_steps == self.termination_no_new_coverage
+        
+        return self.state, self.reward, done, {}
+
+
     def local_frame(self, grid, fill=0):
         local_grid = np.full(self.world.map.shape, fill_value=fill)
         MAX_R, MAX_C = self.world.map.shape
@@ -200,7 +206,7 @@ class CoverageEnv(gym.Env):
 
         self.map = WorldMap(self.world_random_state, 
                             map_size, 
-                            self.cfg['min_coverage_area_fraction'])
+                            self.cfg['min_coverable_area_fraction'])
         
         self.agents = []
         for idx in range(self.n_agents):
@@ -210,12 +216,18 @@ class CoverageEnv(gym.Env):
                     self.agent_random_state,
                     self,
                     self.cfg['agent_observability_radius'],
+                    self.cfg['termination_no_new_coverage']
                 )
             )
         
         self.reset()
     
-    def reset(self):
+    def seed(self, seed=None):
+        self.agent_random_state, seed_agents = seeding.np_random(seed)
+        self.world_random_state, seed_world = seeding.np_random(seed)
+        return [seed_agents, seed_world]
+    
+    def reset(self, seed=None, options=None):
         self.dones = [False] * self.n_agents
         self.timestep = 0
         self.map.reset(self.world_random_state, self.cfg['map_mode'])
@@ -234,7 +246,7 @@ class CoverageEnv(gym.Env):
             for agent in self.agents:
                 agent.reset(self.agent_random_state, pose_mean=pose_seed, pose_var=1)
 
-        return self.step([Action.NOP]*self.cfg['n_agents'])[0]
+        return self.step([Action.NOP]*self.cfg['n_agents'])[0], {}
 
     def compute_gso(self):
         all_agents = self.agents
@@ -242,13 +254,12 @@ class CoverageEnv(gym.Env):
         
         for agent_y in range(len(all_agents)):
             for agent_x in range(agent_y):
-                dst = np.sum(np.array(all_agents[agent_x][0].pose - all_agents[agent_y][0].pose)**2)
+                dst = np.sum(np.array(all_agents[agent_x].pose - all_agents[agent_y].pose)**2)
                 dists[agent_y, agent_x] = dst
                 dists[agent_x, agent_y] = dst
 
         current_dist = self.cfg['communication_range']
         A = dists < (current_dist**2)
-        active_row = ~np.array([a[1] for a in all_agents])
         if self.cfg['ensure_connectivity']:
             def is_connected(m):
                 def walk_dfs(m, index):
@@ -262,12 +273,12 @@ class CoverageEnv(gym.Env):
                 return not np.any(m_c.flatten())
 
             # set done teams as generally connected since they should not be included by increasing connectivity
-            while not is_connected(A[active_row][:, active_row]):
+            while not is_connected(A):
                 current_dist *= 1.1
                 A = (dists < current_dist**2)
 
         # Mask out done agents
-        A = (A).astype(np.int)
+        A = (A).astype(np.int8)
 
         # normalization: refer https://github.com/QingbiaoLi/GraphNets/blob/master/Flocking/Utils/dataTools.py#L601
         np.fill_diagonal(A, 0)
@@ -296,15 +307,17 @@ class CoverageEnv(gym.Env):
             pose_map[agent.pose[ROW], agent.pose[COL]] = 1
         
         global_state = np.stack([self.map.map, self.map.coverage > 0, pose_map], axis=-1)
-        world_done = self.timestep == self.cfg['max_episode_len'] or \
-                        self.map.get_coverage_fraction() == 1.0  
         
+        world_done = self.map.get_coverage_fraction() == 1.0  
+        truncated = self.timestep == self.cfg['max_episode_len']
+
         if self.cfg['episode_termination'] == 'early':
             robots_done = any(self.dones)
         else:
             raise NotImplementedError("Unknown termination mode", self.cfg['episode termination'])
         
-        done = world_done or robots_done
+        done = world_done or robots_done or truncated
+        truncated = truncated or robots_done
 
         state = {
             'agents': tuple([{
@@ -321,7 +334,7 @@ class CoverageEnv(gym.Env):
             'rewards': rewards,
         }
 
-        return state, sum(rewards), done, info
+        return state, sum(rewards), done, truncated, info
 
     # ======================= RENDER MODE ============================
     def generate_color(self, agent_id):

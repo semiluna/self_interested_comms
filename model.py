@@ -1,7 +1,9 @@
 import copy
 
-from ray.rllib.model.modelv2 import ModelV2
-from ray.rllib.torch.torch_modelv2 import TorchModelV2
+from ray.rllib.utils import try_import_torch
+from ray.rllib.models.modelv2 import ModelV2
+from ray.rllib.utils.annotations import override
+from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from ray.rllib.models.torch.misc import normc_initializer, same_padding, SlimConv2d, SlimFC
 
 torch, nn = try_import_torch()
@@ -188,11 +190,6 @@ class AdversarialModel(TorchModelV2, nn.Module):
     def value_function(self):
         assert self._cur_value is not None, "must call forward() first"
         return self._cur_value
-
-
-            
-        
-
 
 
 
