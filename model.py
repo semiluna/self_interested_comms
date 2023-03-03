@@ -33,7 +33,12 @@ class CNN(nn.Module):
     def __init__(self, input_shape, model_config, critic=False):
         nn.Module.__init__(self)
         self.cfg = copy.deepcopy(DEFAULT_OPTIONS)
-        self.cfg.update(model_config['custom_model_config'])
+        self.cfg.update(model_config)
+
+        self.activation = {
+            'relu': nn.ReLU,
+            'leakyrelu': nn.LeakyReLU
+        }[self.cfg['activation']]
 
         layers = []
         (w, h, in_channels) = input_shape
@@ -62,18 +67,25 @@ class AGNN(nn.Module):
     def __init__(self, agent_id, model_config, aggregation='sum'):
         nn.Module.__init__(self)
         self.cfg = copy.deepcopy(DEFAULT_OPTIONS)
-        self.cfg.update(model_config['custom_model_config'])
+        self.cfg.update(model_config)
 
         self.agent_id = agent_id
         self.graph_features = self.cfg['graph_features']
         self.hops = self.cfg['graph_tabs']
 
-        self.layers = []
+        self.layers = nn.ParameterList()
+
+        self.activation = {
+            'relu': nn.ReLU,
+            'leakyrelu': nn.LeakyReLU
+        }[self.cfg['activation']]
 
         for _ in range(self.cfg['graph_layers']):
-            layer_filters = nn.ModuleList()
+            layer_filters = nn.ParameterList()
             for _ in range(self.hops):
-                layer_filters.append(nn.Parameter(self.graph_features, self.graph_features))
+                aux = torch.empty(self.graph_features, self.graph_features)
+                nn.init.uniform_(aux)
+                layer_filters.append(nn.parameter.Parameter(aux))
             self.layers.append(layer_filters)
         
         self.aggregation = {
@@ -90,18 +102,20 @@ class AGNN(nn.Module):
     # NOTE: I am performing a naive forward approach for batched inputs...
     # I may re-implement this to be faster some other time. 
     def forward(self, batched_x, batched_adj_mat):
-        bs, features = batched_x.shape[0], batched_x.shape[1]
+        bs, n_agents, features = batched_x.shape
+        assert batched_adj_mat.shape == (bs, n_agents, n_agents)
+
         output = torch.zeros(bs, features)
         for b in range(bs):
             x = batched_x[b]
             adj_mat = batched_adj_mat[b]
-            for l in range(self.layers):
-                out = torch.linalg.matrix_power(adj_mat, 0)[self.agent_id, :] @ x @ self.layers[l][h]
+            for layer in self.layers:
+                out = torch.linalg.matrix_power(adj_mat, 0)[self.agent_id, :] @ x @ layer[0]
                 for h in range(1, self.hops):
                     Sk = torch.linalg.matrix_power(adj_mat, h)[self.agent_id, :]
-                    out += Sk @ x @ self.layers[l][h]
+                    out += Sk @ x @ layer[h]
                 
-                out = self.activation(out)
+                out = self.activation()(out)
             output[b] = out
         return output
 
@@ -110,7 +124,7 @@ class MLP(nn.Module):
         nn.Module.__init__(self)
 
         self.cfg = copy.deepcopy(DEFAULT_OPTIONS)
-        self.cfg.update(cfg['custom_model_config'])
+        self.cfg.update(cfg)
 
         self.activation = {
             'relu': nn.ReLU,
@@ -130,28 +144,39 @@ class MLP(nn.Module):
         return self.mlp(x)
 
 class AdversarialModel(TorchModelV2, nn.Module):
-    def __init__(self, obs_space, action_space, num_outputs, model_config, name):
-        TorchModelV2.__init__(self, obs_space, action_space, num_outputs, model_config, name)
+    def __init__(self, obs_space, action_space, num_outputs, config, name):
+        TorchModelV2.__init__(self, obs_space, action_space, num_outputs, config, name)
         nn.Module.__init__(self)
 
+        model_config = config['custom_model_config']
         self.cfg = copy.deepcopy(DEFAULT_OPTIONS)
-        self.cfg.update(model_config['custom_model_config'])
+        self.cfg.update(model_config)
+        self.n_agents = len(action_space)
 
-        self.n_agents = self.cfg['n_agents']
+        self.activation = {
+            'relu': nn.ReLU,
+            'leakyrelu': nn.LeakyReLU
+        }[self.cfg['activation']]
+
+        self.cnn_out = self.cfg['cnn_compression']
         # ===================== ACTORS =======================
         self.agent_cnns = [CNN(obs_space.original_space['agents'][a_id]['map'].shape, model_config) for a_id in range(self.n_agents)]
-        self.agent_gnns = [AGNN(a_id, model_config) for a_id in range(len(self.n_agents))]
+        self.agent_gnns = [AGNN(a_id, model_config) for a_id in range(self.n_agents)]
 
-        logit_feats = self.graph_features
+        self.agent_cnns = nn.ModuleList(self.agent_cnns)
+        self.agent_gnns = nn.ModuleList(self.agent_gnns)
+
+        logit_feats = self.cfg['graph_features']
         if self.cfg['cnn_residual']:
-            logit_feats += self.cnn_compression
+            logit_feats += self.cnn_out
         
-        self.agent_mlps = [MLP([logit_feats, 64, 32, 5], model_config) for _ in range(len(self.n_agents))]
+        self.agent_mlps = nn.ModuleList([MLP([logit_feats, 64, 32, 5], model_config) for _ in range(self.n_agents)])
 
         # ===================== CRITICS =======================
-        self.global_cnns = [CNN(obs_space.original_space['state'].shape, model_config, critic=True) for _ in range(self.n_agents)]
-        self.critic_cnns = [CNN(obs_space.original_space['agents'][a_id]['map'].shape, model_config) for a_id in range(self.n_agents)]
-        self.critic_mlps = [MLP([self.cfg['cnn_compression'] + self.cfg['value_cnn_compression'], 64, 32, 1], model_config) for _ in range(self.n_agents)]
+        self.cnn_value_out = self.cfg['value_cnn_compression']
+        self.global_cnns = nn.ModuleList([CNN(obs_space.original_space['state'].shape, model_config, critic=True) for _ in range(self.n_agents)])
+        self.critic_cnns = nn.ModuleList([CNN(obs_space.original_space['agents'][a_id]['map'].shape, model_config) for a_id in range(self.n_agents)])
+        self.critic_mlps = nn.ModuleList([MLP([self.cnn_out + self.cnn_value_out, 64, 32, 1], model_config) for _ in range(self.n_agents)])
 
     @override(ModelV2)
     def forward(self, input_dict, state, seq_lens):
@@ -162,16 +187,26 @@ class AdversarialModel(TorchModelV2, nn.Module):
         gsos = input_dict['obs']['gso']
 
         logits = torch.empty(batch_size, self.n_agents, 5)
+        # get features from CNN compression
+        feats = []
         for a_id in range(self.n_agents):
-            cnn_feats = self.agent_cnns[a_id](o_as[a_id]['map'])
-            gnn_feats = self.agent_gnns[a_id](cnn_feats, gsos)
-            
-            if self.cfg['cnn_residual']:
-                mlp_input = torch.cat([gnn_feats, cnn_feats], dim=1)
-            else:
-                mlp_input = gnn_feats
-            
-            logits[:, a_id] = self.agent_mlps[a_id](mlp_input)
+            feats.append(self.agent_cnns[a_id](o_as[a_id]['map']))
+        cnn_feats = torch.stack(feats, dim=1)
+
+        # perform message passing on these features
+        feats = []
+        for a_id in range(self.n_agents):
+            feats.append(self.agent_gnns[a_id](cnn_feats, gsos))
+        gnn_feats = torch.stack(feats, dim=1)
+
+        if self.cfg['cnn_residual']:
+            mlp_input = torch.cat([gnn_feats, cnn_feats], dim=-1)
+        else:
+            mlp_input = gnn_feats
+        
+        # compress final GNN features per node to actions
+        for a_id in range(self.n_agents):    
+            logits[:, a_id] = self.agent_mlps[a_id](mlp_input[:, a_id])
 
         # ===================== CRITICS =====================
         values = torch.empty(batch_size, self.n_agents)
@@ -179,7 +214,9 @@ class AdversarialModel(TorchModelV2, nn.Module):
             for a_id in range(self.n_agents):
                 local_feats = self.critic_cnns[a_id](o_as[a_id]['map'])
                 global_feats = self.global_cnns[a_id](input_dict['obs']['state'])
-                total_feats = torch.cat([local_feats, global_feats], dim=1)
+                total_feats = torch.cat([local_feats[:, :self.cnn_out], 
+                                        global_feats[:, :self.cnn_value_out]], dim=1)
+                
                 values[:, a_id] = self.critic_mlps[a_id](total_feats).squeeze(1)
         
         self._cur_value = values

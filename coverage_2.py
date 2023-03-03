@@ -4,19 +4,19 @@ import copy
 import numpy as np
 from enum import Enum
 
-import gymnasium as gym
-from gymnasium import spaces
-from gymnasium.utils import seeding
+import gym
+from gym import spaces
+from gym.utils import seeding
 
 DEFAULT_OPTIONS = {
-    'world_shape': [24, 24],
-    'state_size': 48,
+    'world_shape': [16, 16],
+    'state_size': 16,
     'collapse_state': False,
     'termination_no_new_coverage': 10,
     'max_episode_len': -1,
     "min_coverable_area_fraction": 0.6,
     "map_mode": "random",
-    "n_agents": 4,
+    "n_agents": 2,
     "disabled_teams_step": [False],
     "disabled_teams_comms": [False],
     'communication_range': 8.0,
@@ -160,7 +160,7 @@ class Robot():
         self.state = np.stack([local_world, local_coverage, local_robots], axis=-1).astype(np.uint8)
         done = self.no_new_coverage_steps == self.termination_no_new_coverage
         
-        return self.state, self.reward, done, {}
+        return self.state, self.reward, done
 
 
     def local_frame(self, grid, fill=0):
@@ -200,8 +200,9 @@ class CoverageEnv(gym.Env):
             ) * self.n_agents),
             # global adjacency matrix
             'gso': spaces.Box(-np.inf, np.inf, shape=(self.n_agents, self.n_agents)),
-            # TODO: might need to add global state? anyway
+            'state': spaces.Box(low=0, high=2, shape=self.cfg['world_shape'] + [3]),
         })
+
         self.action_space = spaces.Tuple((spaces.Discrete(5),) * self.n_agents)
 
         self.map = WorldMap(self.world_random_state, 
@@ -212,7 +213,7 @@ class CoverageEnv(gym.Env):
         for idx in range(self.n_agents):
             self.agents.append(
                 Robot(
-                    idx,
+                    idx + 1,
                     self.agent_random_state,
                     self,
                     self.cfg['agent_observability_radius'],
@@ -246,7 +247,7 @@ class CoverageEnv(gym.Env):
             for agent in self.agents:
                 agent.reset(self.agent_random_state, pose_mean=pose_seed, pose_var=1)
 
-        return self.step([Action.NOP]*self.cfg['n_agents'])[0], {}
+        return self.step([Action.NOP]*self.cfg['n_agents'])[0]
 
     def compute_gso(self):
         all_agents = self.agents
@@ -295,11 +296,11 @@ class CoverageEnv(gym.Env):
         for idx, agent in enumerate(self.agents):
             agent.step(actions[idx])
 
-        states, rewards = [], []
+        states, rewards = {}, {}
         for idx, agent in enumerate(self.agents):
-            state, reward, done, _ = agent.update_state()
-            states.append(state)
-            rewards.append(reward)
+            state, reward, done  = agent.update_state()
+            states[idx] = state
+            rewards[idx] = reward
             self.dones[idx] = done
 
         pose_map = np.zeros(self.map.shape, dtype=np.uint8)
@@ -307,7 +308,7 @@ class CoverageEnv(gym.Env):
             pose_map[agent.pose[ROW], agent.pose[COL]] = 1
         
         global_state = np.stack([self.map.map, self.map.coverage > 0, pose_map], axis=-1)
-        
+        # print(f'\n\n{self.map.map}\n\n{self.map.coverage}\n\n{pose_map}')
         world_done = self.map.get_coverage_fraction() == 1.0  
         truncated = self.timestep == self.cfg['max_episode_len']
 
@@ -333,8 +334,7 @@ class CoverageEnv(gym.Env):
             'coverable_area': self.map.get_coverable_area(),
             'rewards': rewards,
         }
-
-        return state, sum(rewards), done, truncated, info
+        return state, sum(rewards), done, info
 
     # ======================= RENDER MODE ============================
     def generate_color(self, agent_id):

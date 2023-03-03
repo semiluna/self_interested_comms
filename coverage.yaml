@@ -25,6 +25,7 @@ model:
     custom_model: adversarial
     custom_action_dist: hom_multi_action
     custom_model_config:
+        n_agents: 4
         graph_layers: 1
         graph_tabs: 2
         graph_edge_features: 1
