@@ -185,31 +185,32 @@ class AdversarialModel(TorchModelV2, nn.Module):
 
         # ===================== ACTORS ========================
         gsos = input_dict['obs']['gso']
+        device = gsos.device
 
-        logits = torch.empty(batch_size, self.n_agents, 5)
+        logits = torch.empty(batch_size, self.n_agents, 5).to(device)
         # get features from CNN compression
         feats = []
         for a_id in range(self.n_agents):
             feats.append(self.agent_cnns[a_id](o_as[a_id]['map']))
-        cnn_feats = torch.stack(feats, dim=1)
+        cnn_feats = torch.stack(feats, dim=1).to(device)
 
         # perform message passing on these features
         feats = []
         for a_id in range(self.n_agents):
             feats.append(self.agent_gnns[a_id](cnn_feats, gsos))
-        gnn_feats = torch.stack(feats, dim=1)
+        gnn_feats = torch.stack(feats, dim=1).to(device)
 
         if self.cfg['cnn_residual']:
-            mlp_input = torch.cat([gnn_feats, cnn_feats], dim=-1)
+            mlp_input = torch.cat([gnn_feats, cnn_feats], dim=-1).to(device)
         else:
-            mlp_input = gnn_feats
+            mlp_input = gnn_feats.to(device)
         
         # compress final GNN features per node to actions
         for a_id in range(self.n_agents):    
             logits[:, a_id] = self.agent_mlps[a_id](mlp_input[:, a_id])
 
         # ===================== CRITICS =====================
-        values = torch.empty(batch_size, self.n_agents)
+        values = torch.empty(batch_size, self.n_agents).to(device)
         if self.cfg['forward_values']:
             for a_id in range(self.n_agents):
                 local_feats = self.critic_cnns[a_id](o_as[a_id]['map'])
