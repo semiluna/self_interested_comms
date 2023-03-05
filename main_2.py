@@ -1,4 +1,7 @@
 import argparse
+import os
+import os.path as path
+
 import ray
 from ray import tune
 
@@ -6,6 +9,7 @@ from ray import tune
 from ray.tune.registry import register_env
 from ray.rllib.models import ModelCatalog
 from ray.rllib.algorithms.callbacks import DefaultCallbacks
+from ray.tune.logger import CSVLoggerCallback
 # from ray.tune.registry import get_trainable_cls
 # from ray.tune.integration.wandb import WandbTrainableMixin
 
@@ -48,19 +52,21 @@ def train(args):
     ModelCatalog.register_custom_action_dist(
         "hom_multi_action", TorchHomogeneousMultiActionDistribution
     )
-
+    cwd = os.getcwd()
+    results_dir = path.join(cwd, 'results')
+    assert path.exists(results_dir) and path.isdir(results_dir)
     tune.run(
         MultiPPOTrainer,
         checkpoint_freq=1,
         keep_checkpoints_num=1,
-        local_dir="/tmp",
+        local_dir=results_dir,
         callbacks=[WandbLoggerCallback(
             project="r255-marl",
-        )],
+        ), CSVLoggerCallback()],
         stop={"training_iteration": args.training_iteration},
         config={
             "callbacks": CustomCallbacks,
-            "output":'tmp/',
+            "output": './tmp/',
             "framework": "torch",
             "env": "coverage",
             "use_gae": True,
