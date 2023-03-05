@@ -16,16 +16,17 @@ DEFAULT_OPTIONS = {
     'max_episode_len': -1,
     "min_coverable_area_fraction": 0.6,
     "map_mode": "random",
-    "n_agents": 2,
+    "n_agents": 4,
     "disabled_teams_step": [False],
     "disabled_teams_comms": [False],
-    'communication_range': 8.0,
+    'communication_range': 4,
     'one_agent_per_cell': False,
     'ensure_connectivity': True,
     'reward_type': 'semi_cooperative',
     #"operation_mode": 'all', # greedy_only, coop_only, don't default for now
     'episode_termination': 'early',
-    'agent_observability_radius': 3,
+    'agent_observability_radius': 4,
+    'disable_comms': False,
 }
 
 class Dir(Enum):
@@ -145,9 +146,10 @@ class Robot():
         coverage = self.coverage.copy().astype(np.int8)
 
         # Get local information about obstacles, anything outside is an `obstacle`
-        local_world = self.local_frame(self.world.map.map, fill=1)
+        output_shape = np.array(self.world.map.map.shape)
+        local_world = self.local_frame(self.world.map.map, output_shape, fill=1)
         # Get local information on my previous coverage
-        local_coverage = self.local_frame(coverage, fill=0)
+        local_coverage = self.local_frame(coverage, output_shape, fill=0)
         
         # Get neighbours within field-of-vision
         local_robots = np.zeros(self.world.map.shape, dtype=np.uint8)
@@ -155,26 +157,30 @@ class Robot():
             if agent is not self and np.sum((agent.pose - self.pose)**2) < self.radius**2:
                 local_robots[agent.pose[ROW], agent.pose[COL]] = 2
         local_robots[self.pose[ROW], self.pose[COL]] = 1
-        local_robots = self.local_frame(local_robots, fill=0)
-        
+        local_robots = self.local_frame(local_robots, output_shape, fill=0)
+
         self.state = np.stack([local_world, local_coverage, local_robots], axis=-1).astype(np.uint8)
         done = self.no_new_coverage_steps == self.termination_no_new_coverage
         
         return self.state, self.reward, done
 
+    def local_frame(self, m, output_shape, fill=0):
+        half_out_shape = np.array(output_shape)
+        padded = np.pad(m,([half_out_shape[Y]]*2,[half_out_shape[X]]*2), mode='constant', constant_values=fill)
+        return padded[self.pose[Y]:self.pose[Y] + output_shape[Y], self.pose[X]:self.pose[X] + output_shape[Y]]
 
-    def local_frame(self, grid, fill=0):
-        local_grid = np.full(self.world.map.shape, fill_value=fill)
-        MAX_R, MAX_C = self.world.map.shape
-        center_row = MAX_R // 2
-        center_col = MAX_C // 2
-        for r in range(0, MAX_R):
-            for c in range(0, MAX_C):
-                dr = r - self.pose[ROW]
-                dc = c - self.pose[COL]
-                if dr**2 + dc**2 < self.radius**2:
-                    local_grid[center_row + dr, center_col + dc] = grid[r, c]
-        return local_grid
+    # def local_frame(self, grid, fill=0):
+    #     local_grid = np.full(self.world.map.shape, fill_value=fill)
+    #     MAX_R, MAX_C = self.world.map.shape
+    #     center_row = MAX_R // 2
+    #     center_col = MAX_C // 2
+    #     for r in range(0, MAX_R):
+    #         for c in range(0, MAX_C):
+    #             dr = r - self.pose[ROW]
+    #             dc = c - self.pose[COL]
+    #             if dr**2 + dc**2 < self.radius**2:
+    #                 local_grid[center_row + dr, center_col + dc] = grid[r, c]
+    #     return local_grid
 
 
 class CoverageEnv(gym.Env):
@@ -203,6 +209,8 @@ class CoverageEnv(gym.Env):
             'state': spaces.Box(low=0, high=2, shape=self.cfg['world_shape'] + [3]),
         })
 
+        self._max_episode_steps = self.cfg['max_episode_len']
+
         self.action_space = spaces.Tuple((spaces.Discrete(5),) * self.n_agents)
 
         self.map = WorldMap(self.world_random_state, 
@@ -229,6 +237,7 @@ class CoverageEnv(gym.Env):
         return [seed_agents, seed_world]
     
     def reset(self, seed=None, options=None):
+        self.total_rewards = 0
         self.dones = [False] * self.n_agents
         self.timestep = 0
         self.map.reset(self.world_random_state, self.cfg['map_mode'])
@@ -334,7 +343,8 @@ class CoverageEnv(gym.Env):
             'coverable_area': self.map.get_coverable_area(),
             'rewards': rewards,
         }
-        return state, sum(rewards), done, info
+
+        return state, sum(rewards.values()), done, info
 
     # ======================= RENDER MODE ============================
     def generate_color(self, agent_id):
