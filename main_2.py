@@ -6,6 +6,8 @@ from ray import tune
 from ray.tune.registry import register_env
 from ray.rllib.models import ModelCatalog
 from ray.rllib.algorithms.callbacks import DefaultCallbacks
+# from ray.tune.registry import get_trainable_cls
+# from ray.tune.integration.wandb import WandbTrainableMixin
 
 from ray.air.callbacks.wandb import WandbLoggerCallback
 
@@ -13,6 +15,14 @@ from coverage_2 import CoverageEnv
 from model import AdversarialModel
 from trainer_2 import MultiPPOTrainer
 from action_distribution import TorchHomogeneousMultiActionDistribution
+
+
+# class _WrappedTrainable(WandbTrainableMixin, MultiPPOTrainer):
+#     _name = MultiPPOTrainer.__name__ if hasattr(MultiPPOTrainer, "__name__") \
+#         else "wrapped_trainable"
+    
+#     def __init__(self, config=None, logger_creator=None):
+#             super().__init__(config=config, logger_creator=logger_creator)
 
 class CustomCallbacks(DefaultCallbacks):
     def on_episode_start(self, worker, base_env, policies, episode, **kwargs):
@@ -28,8 +38,9 @@ class CustomCallbacks(DefaultCallbacks):
         # episode.custom_metrics['rewards'] = {a_id: sum(values) for a_id, values in episode.user_data['rewards'].items()}
         episode.custom_metrics['agent_reward_max'] = max(episode.user_data['rewards'].values())
         episode.custom_metrics['agent_reward_min'] = min(episode.user_data['rewards'].values())
+        episode.custom_metrics['agent_reward_mean'] = sum(episode.user_data['rewards'].values()) / len(episode.user_data['rewards'].keys())
 
-def train():
+def train(args):
     ray.init()
 
     register_env("coverage", lambda config: CoverageEnv(config))
@@ -45,9 +56,8 @@ def train():
         local_dir="/tmp",
         callbacks=[WandbLoggerCallback(
             project="r255-marl",
-            log_config=True
         )],
-        stop={"training_iteration": 30},
+        stop={"training_iteration": args.training_iteration},
         config={
             "callbacks": CustomCallbacks,
             "output":'tmp/',
@@ -59,13 +69,13 @@ def train():
             "lambda": 0.95,
             "clip_param": 0.2,
             "entropy_coeff": 0.01,
-            "train_batch_size": 32,
-            "rollout_fragment_length": 32,
-            "sgd_minibatch_size": 32,
-            "num_sgd_iter": 100,
-            "num_gpus": 0,
-            "num_workers": 4,
-            "num_envs_per_worker": 1,
+            "train_batch_size": args.train_batch_size,
+            "rollout_fragment_length": args.rollout_fragment_length,
+            "sgd_minibatch_size": args.sgd_minibatch_size,
+            "num_sgd_iter": args.num_sgd_iter,
+            "num_gpus": args.num_gpus,
+            "num_workers": args.num_workers,
+            "num_envs_per_worker": args.num_envs_per_worker,
             "lr": 5e-4,
             "gamma": 0.9,
             "batch_mode": "truncate_episodes",
@@ -114,14 +124,26 @@ def train():
                 'episode_termination': 'early', # early/fixed/default
                 'operation_mode': 'coop_only',
             },
+            "wandb":{
+                "project": "r255-marl"
+            }
         }
     )
 
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser(
-    #     description="RLLib multi-agent with shared NN demo."
-    # )
+    parser = argparse.ArgumentParser(
+        description="RLLib multi-agent with differentiable communication channel."
+    )
 
-    # args = parser.parse_args()
-    train()
+    parser.add_argument('--num_gpus', type=int, default=1)
+    parser.add_argument('--train_batch_size', type=int, default=1000)
+    parser.add_argument('--rollout_fragment_length', type=int, default=125)
+    parser.add_argument('--num_sgd_iter', type=int, default=5)
+    parser.add_argument('--num_workers', type=int, default=8)
+    parser.add_argument('--num_envs_per_worker', type=int, default=1)
+    parser.add_argument('--training_iteration', type=int, default=100)
+    parser.add_argument('--sgd_minibatch_size', type=int, default=100)
+
+    args = parser.parse_args()
+    train(args)
