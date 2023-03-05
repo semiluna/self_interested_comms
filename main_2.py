@@ -141,6 +141,5 @@ if __name__ == "__main__":
     parser.add_argument('--num_envs_per_worker', type=int, default=1)
     parser.add_argument('--training_iteration', type=int, default=100)
     parser.add_argument('--sgd_minibatch_size', type=int, default=100)
-    parser.add_argument('--num_envs_per_worker', type=int, default=1)
     args = parser.parse_args()
     train(args)
