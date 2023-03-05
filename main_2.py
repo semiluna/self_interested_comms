@@ -123,9 +123,6 @@ def train(args):
                 'reward_type': 'semi_cooperative', #semi_cooperative/cooperative
                 'episode_termination': 'early', # early/fixed/default
                 'operation_mode': 'coop_only',
-            },
-            "wandb":{
-                "project": "r255-marl"
             }
         }
     )
