@@ -26,7 +26,8 @@ DEFAULT_OPTIONS = {
     "relative": True,
     "value_cnn_compression": 512,
     "value_cnn_filters": [[32, [8, 8], 2], [64, [4, 4], 2], [128, [4, 4], 2]],
-    "forward_values": True
+    "forward_values": True,
+    "disable_comms": False,
 }
 
 class CNN(nn.Module):
@@ -153,6 +154,9 @@ class AdversarialModel(TorchModelV2, nn.Module):
         self.cfg.update(model_config)
         self.n_agents = len(action_space)
 
+
+        self.disable_comms = self.cfg['disable_comms']
+
         self.activation = {
             'relu': nn.ReLU,
             'leakyrelu': nn.LeakyReLU
@@ -184,7 +188,14 @@ class AdversarialModel(TorchModelV2, nn.Module):
         o_as = input_dict['obs']['agents']
 
         # ===================== ACTORS ========================
-        gsos = input_dict['obs']['gso']
+        device = input_dict['obs']['gso'].device
+        gsos = input_dict['obs']['gso'].to(device)
+        if self.disable_comms:
+            aux = torch.eye(self.n_agents)
+            aux = aux.reshape((1, self.n_agents, self.n_agents))
+            batched = aux.repeat(batch_size, 1, 1)
+            gsos = batched.to(device) # the adjancency matrix has only self loops
+
         device = gsos.device
 
         logits = torch.empty(batch_size, self.n_agents, 5).to(device)

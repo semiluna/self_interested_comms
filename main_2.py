@@ -44,6 +44,7 @@ class CustomCallbacks(DefaultCallbacks):
         episode.custom_metrics['agent_reward_min'] = min(episode.user_data['rewards'].values())
         episode.custom_metrics['agent_reward_mean'] = sum(episode.user_data['rewards'].values()) / len(episode.user_data['rewards'].keys())
 
+
 def train(args):
     ray.init()
 
@@ -110,6 +111,7 @@ def train(args):
                     'cnn_residual': False,
                     'agent_split': 1,
                     'greedy_mse_fac': 0.0,
+                    'disable_comms': args.disable_comms,
                 },
             },
             "env_config": {
@@ -124,7 +126,7 @@ def train(args):
                 'min_coverable_area_fraction': 0.6,
                 'map_mode': 'random',
                 'reward_annealing': 0.0,
-                'communication_range': 8.0,
+                'communication_range': 100.0,
                 'ensure_connectivity': True,
                 'reward_type': 'semi_cooperative', #semi_cooperative/cooperative
                 'episode_termination': 'early', # early/fixed/default
@@ -147,5 +149,6 @@ if __name__ == "__main__":
     parser.add_argument('--num_envs_per_worker', type=int, default=1)
     parser.add_argument('--training_iteration', type=int, default=100)
     parser.add_argument('--sgd_minibatch_size', type=int, default=100)
+    parser.add_argument('--disable_comms', action='store_true')
     args = parser.parse_args()
     train(args)
