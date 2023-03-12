@@ -26,6 +26,7 @@ DEFAULT_OPTIONS = {
     #"operation_mode": 'all', # greedy_only, coop_only, don't default for now
     'episode_termination': 'early',
     'agent_observability_radius': 4,
+    'agent_visibility': 2,
     'disable_comms': False,
 }
 
@@ -146,7 +147,7 @@ class Robot():
         coverage = self.coverage.copy().astype(np.int8)
 
         # Get local information about obstacles, anything outside is an `obstacle`
-        local_world = self.shift_matrix(self.world.map.map, self.pose[ROW], self.pose[COL], fill=1)
+        local_world = self.shift_matrix(self.world.map.map, self.pose[ROW], self.pose[COL], fill=1, full_visibility=False)
         # Get local information on my previous coverage
         local_coverage = self.shift_matrix(coverage, self.pose[ROW], self.pose[COL], fill=0)
         
@@ -168,7 +169,7 @@ class Robot():
     #     padded = np.pad(m,([half_out_shape[Y]]*2,[half_out_shape[X]]*2), mode='constant', constant_values=fill)
     #     return padded[self.pose[Y]:self.pose[Y] + output_shape[Y] * 2, self.pose[X]:self.pose[X] + output_shape[Y] * 2]
 
-    def shift_matrix(self, matrix, row, col, fill=0):
+    def shift_matrix(self, matrix, row, col, fill=0, full_visibility=True):
         # Calculate the difference between the desired center coordinates
         # and the actual center coordinates of the matrix
         center_row = len(matrix) // 2
@@ -192,8 +193,19 @@ class Robot():
                 new_c = c + delta_col
                 if 0 <= new_r < len(matrix) and 0 <= new_c < len(matrix[0]):
                     shifted_matrix[new_r][new_c] = matrix[r][c]
+        
+        # low visibility
+        vis = DEFAULT_OPTIONS['agent_visibility']
+        if vis >= 8 or full_visibility:
+            return np.array(shifted_matrix)
+        
+        vis_matrix = [[fill for _ in range(len(matrix[0]))] for _ in range(len(matrix))]
+        for r in range(center_row - vis, center_row + vis + 1):
+            for c in range(center_col - vis, center_col + vis + 1):
+                if 0 <= r < len(matrix) and 0 <= c < len(matrix[0]):
+                    vis_matrix[r][c] = shifted_matrix[r][c]
 
-        return np.array(shifted_matrix)
+        return np.array(vis_matrix)
 
     # def local_frame(self, grid, fill=0):
     #     local_grid = np.full(self.world.map.shape, fill_value=fill)
