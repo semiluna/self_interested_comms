@@ -146,10 +146,9 @@ class Robot():
         coverage = self.coverage.copy().astype(np.int8)
 
         # Get local information about obstacles, anything outside is an `obstacle`
-        output_shape = np.array(self.world.map.map.shape)
-        local_world = self.local_frame(self.world.map.map, output_shape, fill=1)
+        local_world = self.shift_matrix(self.world.map.map, self.pose[ROW], self.pose[COL], fill=1)
         # Get local information on my previous coverage
-        local_coverage = self.local_frame(coverage, output_shape, fill=0)
+        local_coverage = self.shift_matrix(coverage, self.pose[ROW], self.pose[COL], fill=0)
         
         # Get neighbours within field-of-vision
         local_robots = np.zeros(self.world.map.shape, dtype=np.uint8)
@@ -157,17 +156,44 @@ class Robot():
             if agent is not self and np.sum((agent.pose - self.pose)**2) < self.radius**2:
                 local_robots[agent.pose[ROW], agent.pose[COL]] = 2
         local_robots[self.pose[ROW], self.pose[COL]] = 1
-        local_robots = self.local_frame(local_robots, output_shape, fill=0)
+        local_robots = self.shift_matrix(local_robots, self.pose[ROW], self.pose[COL], fill=0)
 
         self.state = np.stack([local_world, local_coverage, local_robots], axis=-1).astype(np.uint8)
         done = self.no_new_coverage_steps == self.termination_no_new_coverage
         
         return self.state, self.reward, done
 
-    def local_frame(self, m, output_shape, fill=0):
-        half_out_shape = np.array(output_shape)
-        padded = np.pad(m,([half_out_shape[Y]]*2,[half_out_shape[X]]*2), mode='constant', constant_values=fill)
-        return padded[self.pose[Y]:self.pose[Y] + output_shape[Y], self.pose[X]:self.pose[X] + output_shape[Y]]
+    # def local_frame(self, m, output_shape, fill=0):
+    #     half_out_shape = np.array(output_shape)
+    #     padded = np.pad(m,([half_out_shape[Y]]*2,[half_out_shape[X]]*2), mode='constant', constant_values=fill)
+    #     return padded[self.pose[Y]:self.pose[Y] + output_shape[Y] * 2, self.pose[X]:self.pose[X] + output_shape[Y] * 2]
+
+    def shift_matrix(self, matrix, row, col, fill=0):
+        # Calculate the difference between the desired center coordinates
+        # and the actual center coordinates of the matrix
+        center_row = len(matrix) // 2
+        center_col = len(matrix[0]) // 2
+        delta_row = center_row - row
+        delta_col = center_col - col
+
+        # If the desired center coordinates are already the actual center
+        # coordinates, return the original matrix
+        if delta_row == 0 and delta_col == 0:
+            return matrix
+
+        # Create a new matrix of the same size, filled with the pad value
+        shifted_matrix = [[fill for _ in range(len(matrix[0]))] for _ in range(len(matrix))]
+
+        # Copy the values from the original matrix to the new matrix, shifting
+        # each value to the appropriate position
+        for r in range(len(matrix)):
+            for c in range(len(matrix[0])):
+                new_r = r + delta_row
+                new_c = c + delta_col
+                if 0 <= new_r < len(matrix) and 0 <= new_c < len(matrix[0]):
+                    shifted_matrix[new_r][new_c] = matrix[r][c]
+
+        return np.array(shifted_matrix)
 
     # def local_frame(self, grid, fill=0):
     #     local_grid = np.full(self.world.map.shape, fill_value=fill)
@@ -206,7 +232,7 @@ class CoverageEnv(gym.Env):
             ) * self.n_agents),
             # global adjacency matrix
             'gso': spaces.Box(-np.inf, np.inf, shape=(self.n_agents, self.n_agents)),
-            'state': spaces.Box(low=0, high=2, shape=self.cfg['world_shape'] + [3]),
+            'state': spaces.Box(low=0, high=8, shape=self.cfg['world_shape'] + [3]),
         })
 
         self._max_episode_steps = self.cfg['max_episode_len']
@@ -316,7 +342,7 @@ class CoverageEnv(gym.Env):
         for agent in self.agents:
             pose_map[agent.pose[ROW], agent.pose[COL]] = 1
         
-        global_state = np.stack([self.map.map, self.map.coverage > 0, pose_map], axis=-1)
+        global_state = np.stack([self.map.map, self.map.coverage, pose_map], axis=-1)
         # print(f'\n\n{self.map.map}\n\n{self.map.coverage}\n\n{pose_map}')
         world_done = self.map.get_coverage_fraction() == 1.0  
         truncated = self.timestep == self.cfg['max_episode_len']
