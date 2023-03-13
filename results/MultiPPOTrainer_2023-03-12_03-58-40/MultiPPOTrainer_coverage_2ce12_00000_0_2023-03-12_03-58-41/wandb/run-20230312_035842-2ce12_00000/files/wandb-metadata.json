@@ -1,0 +1,141 @@
+{
+    "os": "Linux-5.15.0-56-generic-x86_64-with-glibc2.35",
+    "python": "3.9.16",
+    "heartbeatAt": "2023-03-12T03:58:42.893703",
+    "startedAt": "2023-03-12T03:58:42.404848",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "--train_batch_size",
+        "5000",
+        "--rollout_fragment_length",
+        "100",
+        "--sgd_minibatch_size",
+        "1000",
+        "--num_workers",
+        "12",
+        "--training_iteration",
+        "900",
+        "--num_envs_per_worker",
+        "16",
+        "--num_gpu",
+        "1",
+        "--disable_comms"
+    ],
+    "state": "running",
+    "program": "/home/aib36/self_interested_comms/main_2.py",
+    "codePath": "main_2.py",
+    "git": {
+        "remote": "git@github.com:semiluna/self_interested_comms.git",
+        "commit": "1ffaea3624f5c02632e6d10bb6137d024cffa9b8"
+    },
+    "email": null,
+    "root": "/home/aib36/self_interested_comms",
+    "host": "dev-gpu-1",
+    "username": "aib36",
+    "executable": "/home/aib36/.conda/envs/r255/bin/python3",
+    "cpu_count": 16,
+    "cpu_count_logical": 16,
+    "cpu_freq": {
+        "current": 2294.6660000000006,
+        "min": 0.0,
+        "max": 0.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 2294.666,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2294.666,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2294.666,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2294.666,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2294.666,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2294.666,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2294.666,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2294.666,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2294.666,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2294.666,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2294.666,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2294.666,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2294.666,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2294.666,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2294.666,
+            "min": 0.0,
+            "max": 0.0
+        },
+        {
+            "current": 2294.666,
+            "min": 0.0,
+            "max": 0.0
+        }
+    ],
+    "disk": {
+        "total": 48.914669036865234,
+        "used": 44.6985969543457
+    },
+    "gpu": "NVIDIA A100 80GB PCIe",
+    "gpu_count": 1,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA A100 80GB PCIe",
+            "memory_total": 85899345920
+        }
+    ],
+    "memory": {
+        "total": 125.7824592590332
+    }
+}

@@ -1,0 +1,131 @@
+{
+  "batch_mode": "truncate_episodes",
+  "callbacks": "<class '__main__.CustomCallbacks'>",
+  "clip_param": 0.2,
+  "entropy_coeff": 0.01,
+  "env": "coverage",
+  "env_config": {
+    "collapse_state": false,
+    "communication_range": 100.0,
+    "disabled_teams_comms": [
+      true,
+      false
+    ],
+    "disabled_teams_step": [
+      true,
+      false
+    ],
+    "ensure_connectivity": true,
+    "episode_termination": "early",
+    "map_mode": "random",
+    "max_episode_len": 154,
+    "min_coverable_area_fraction": 0.6,
+    "n_agents": 4,
+    "operation_mode": "coop_only",
+    "reward_annealing": 0.0,
+    "reward_type": "semi_cooperative",
+    "state_size": 8,
+    "termination_no_new_coverage": 10,
+    "world_shape": [
+      16,
+      16
+    ]
+  },
+  "framework": "torch",
+  "gamma": 0.9,
+  "kl_coeff": 0.5,
+  "lambda": 0.95,
+  "lr": 0.0005,
+  "model": {
+    "custom_action_dist": "hom_multi_action",
+    "custom_model": "adversarial",
+    "custom_model_config": {
+      "activation": "relu",
+      "agent_split": 1,
+      "cnn_compression": 32,
+      "cnn_filters": [
+        [
+          8,
+          [
+            4,
+            4
+          ],
+          2
+        ],
+        [
+          16,
+          [
+            4,
+            4
+          ],
+          2
+        ],
+        [
+          32,
+          [
+            3,
+            3
+          ],
+          2
+        ]
+      ],
+      "cnn_residual": false,
+      "disable_comms": true,
+      "freeze_coop": false,
+      "freeze_coop_value": false,
+      "freeze_greedy": false,
+      "freeze_greedy_value": false,
+      "gp_kernel_size": 16,
+      "graph_aggregation": "sum",
+      "graph_edge_features": 1,
+      "graph_features": 32,
+      "graph_layers": 1,
+      "graph_tabs": 2,
+      "greedy_mse_fac": 0.0,
+      "pre_gnn_mlp": [
+        64,
+        128,
+        32
+      ],
+      "relative": true,
+      "value_cnn_compression": 32,
+      "value_cnn_filters": [
+        [
+          8,
+          [
+            4,
+            4
+          ],
+          2
+        ],
+        [
+          16,
+          [
+            4,
+            4
+          ],
+          2
+        ],
+        [
+          32,
+          [
+            4,
+            4
+          ],
+          2
+        ]
+      ]
+    }
+  },
+  "num_envs_per_worker": 16,
+  "num_gpus": 1,
+  "num_sgd_iter": 5,
+  "num_workers": 12,
+  "observation_filter": "NoFilter",
+  "output": "./tmp/",
+  "rollout_fragment_length": 100,
+  "sgd_minibatch_size": 1000,
+  "train_batch_size": 5000,
+  "use_critic": true,
+  "use_gae": true
+}
